@@ -127,7 +127,7 @@ by the admin, at roughly cost + 50%.
 | account | `ac` (won at auction by `avraldigital`, keys `EOS4yTp9…` + `ac@eosio.code` on active) |
 | deployed | 2026-09-30, tx `177bd2a2f6bb8d9bc0c320c4afc6d42f9b7208a4e452591542f0f0ac62f8334e` |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
-| fees | `wrap.alcor` `1.00000000 WAX` |
+| fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30) |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
 | | `acfactest.ac` (exactly the fee, nothing forwarded), tx `37fe41f5cf72a37eea723f95810af21e00d78e699b9e60b65f565935ca58e61e` |
 
