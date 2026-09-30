@@ -40,6 +40,36 @@ back with `undelegatebw`.
 - **Reserve.** A transfer with memo `topup` is accepted as a reserve refill and
   creates nothing.
 
+### Digits-only memo, for exchanges
+
+Many exchanges refuse `:`, `.` or `_` in a withdrawal memo, and some take digits
+only. So the same request can also be written as exactly **108 digits**:
+
+```
+15686568569603096576 1016584697680901733823934875031010872679428697709427288375000512758614788643813616221731
+└─ name, 20 digits ─┘└──────────────────────────── K1 key + checksum, 88 digits ────────────────────────────┘
+```
+
+(no space in the real memo)
+
+- **Name.** The account name as its `uint64` value, zero-padded to 20 digits.
+  `vasya.ac` is `15686568569603096576`.
+- **Key.** One K1 key, used for both owner and active: its 33 bytes and the same
+  4 checksum bytes `PUB_K1_` carries, as one big-endian number, zero-padded to
+  88 digits. That number is exactly what `PUB_K1_`'s base58 spells, so the
+  checksum still catches a mistyped digit. Signer then puts the passkey on active
+  itself, with an `updateauth` signed by the owner key.
+
+A memo made only of digits is read this way; anything else is read as the text
+form. Build it with the reference script, which front ends mirror:
+
+```bash
+node tools/numeric-memo.mjs vasya.ac PUB_K1_4yTp9kp2JsTudNPiZsJwTEdtK4QqAceoKwwMNYNTx1cMpFTRgW
+```
+
+A refused request from an exchange fails the withdrawal itself, so the tokens
+stay on the exchange. Nothing ever waits on `ac` for a second step.
+
 ### Who sends the transfer
 
 Anyone. The contract only sees a transfer of a listed token, and does not care
@@ -71,6 +101,10 @@ Every check fails the whole transfer, and the tokens never leave the sender:
 | `key is not valid base58` / `key is too short` / `key has the wrong length` | malformed key |
 | `key checksum does not match` | mistyped key |
 | `webauthn key has trailing bytes` / `webauthn key has no rpid` | malformed WA key |
+| `numeric memo must be 108 digits` | a digits-only memo of any other length |
+| `account number is out of range` | the name part is above `UINT64_MAX` |
+| `account number is not a canonical name` | the name part does not round-trip as a name |
+| `key is not a number` / `key number is out of range` | the key part is not a 37-byte number |
 | `account name is taken` | the name already exists |
 | `account factory is not configured` | `setconfig` never called |
 
@@ -126,10 +160,13 @@ by the admin, at roughly cost + 50%.
 |---|---|
 | account | `ac` (won at auction by `avraldigital`, keys `EOS4yTp9…` + `ac@eosio.code` on active) |
 | deployed | 2026-09-30, tx `177bd2a2f6bb8d9bc0c320c4afc6d42f9b7208a4e452591542f0f0ac62f8334e` |
+| digits-only memo | 2026-10-01, tx `dc0a190108bf876e6ed9e45134c965619723972c961562c6e2bc9ce32c423ab1`, code hash `d04ad9b0…5b1f` |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
 | fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30) |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
 | | `acfactest.ac` (exactly the fee, nothing forwarded), tx `37fe41f5cf72a37eea723f95810af21e00d78e699b9e60b65f565935ca58e61e` |
+| | `numtest.ac` (1.5 TLOS, digits-only memo), tx `cbe8bbc30f5f3e2f8f2bfbd1d61c4327656eb85cde1fcda20cf711ceea326439` |
+| | `txttest.ac` (1.5 TLOS, text memo with a WA active), tx `39bb0f34331bd5f62151fd1bc6a2c77bce2698d8765940e6a2c3df9f2a18b279` |
 
 Every refusal in the table above was also pushed on mainnet and refused with its
 message. Not yet run end to end: a deposit arriving through the router or the
@@ -144,7 +181,7 @@ make    # build/account_factory.wasm + .abi, cdt-cpp 5
 ## Deploy and operate
 
 ```bash
-# code (~290 KB of RAM on ac)
+# code (~320 KB of RAM on ac)
 tcleos set contract ac build account_factory.wasm account_factory.abi -p ac@active
 tcleos set account permission ac active --add-code -p ac@owner
 

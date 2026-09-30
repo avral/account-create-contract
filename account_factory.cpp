@@ -3,6 +3,7 @@
 #include <eosio/eosio.hpp>
 #include <eosio/singleton.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <string_view>
 
@@ -10,7 +11,8 @@ using namespace eosio;
 
 // Creates `<nick>.ac` accounts, paid for by the deposit that asks for one.
 //
-// A transfer of a listed token with memo `<nick>.ac:<owner key>:<active key>`
+// A transfer of a listed token with memo `<nick>.ac:<owner key>:<active key>`,
+// or the same request as 108 digits for exchanges that allow nothing else,
 // creates the account, keeps the token's fee and sends the rest on to it. RAM and
 // stake come out of this contract's own system-token reserve, refilled by a
 // transfer with memo `topup`.
@@ -22,6 +24,13 @@ static constexpr name SYSTEM_ACCOUNT = "eosio"_n;
 static constexpr std::string_view TOPUP_MEMO = "topup";
 static constexpr std::string_view WELCOME_MEMO = "Welcome to Alcor";
 static constexpr size_t MAX_NAME_LENGTH = 12;
+
+// The digits-only memo, for exchanges that refuse anything else in one:
+// the account name as a uint64, then one K1 key with its checksum, each
+// zero-padded to a fixed width.
+static constexpr size_t NUMERIC_NAME_DIGITS = 20;  // UINT64_MAX has 20 digits
+static constexpr size_t NUMERIC_KEY_DIGITS = 88;   // 256^37 has 90, but a key starts 02 or 03
+static constexpr size_t NUMERIC_KEY_BYTES = 37;    // 33 key bytes + 4 checksum bytes
 
 struct key_weight {
    public_key key;
@@ -85,35 +94,53 @@ std::vector<std::string_view> split(std::string_view text, char separator) {
    }
 }
 
-std::vector<char> base58_decode(std::string_view text) {
-   static constexpr std::string_view ALPHABET =
-      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+bool is_digits(std::string_view text) {
+   return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
 
+// Big-endian bytes of the number `text` spells in `alphabet`, with no leading zero bytes.
+std::vector<char> decode_number(std::string_view text, std::string_view alphabet, const char* error) {
    std::vector<uint8_t> bytes;  // least significant first while decoding
    for (const char c : text) {
-      const size_t digit = ALPHABET.find(c);
-      check(digit != std::string_view::npos, "key is not valid base58");
+      const size_t digit = alphabet.find(c);
+      check(digit != std::string_view::npos, error);
 
       uint32_t carry = digit;
       for (auto& byte : bytes) {
-         carry += uint32_t(byte) * 58;
+         carry += uint32_t(byte) * alphabet.size();
          byte = carry & 0xff;
          carry >>= 8;
       }
       for (; carry > 0; carry >>= 8) bytes.push_back(carry & 0xff);
    }
-   for (size_t i = 0; i < text.size() && text[i] == '1'; ++i) bytes.push_back(0);
 
    return std::vector<char>(bytes.rbegin(), bytes.rend());
 }
 
-// `PUB_<type>_<base58(data || ripemd160(data || type)[0..4])>`, types K1, R1 and WA.
-// The checksum is what keeps a mistyped key from creating an account nobody can use.
-public_key parse_key(std::string_view text) {
-   check(text.size() > 7 && text.substr(0, 4) == "PUB_" && text[6] == '_',
-         "key must be PUB_K1_, PUB_R1_ or PUB_WA_");
-   const std::string_view type = text.substr(4, 2);
-   const std::vector<char> raw = base58_decode(text.substr(7));
+std::vector<char> base58_decode(std::string_view text) {
+   // Each leading '1' stands for a zero byte, which the number itself drops.
+   const size_t zeros = text.find_first_not_of('1');
+   std::vector<char> bytes(zeros == std::string_view::npos ? text.size() : zeros, 0);
+
+   const std::vector<char> number =
+      decode_number(text, "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", "key is not valid base58");
+   bytes.insert(bytes.end(), number.begin(), number.end());
+   return bytes;
+}
+
+uint64_t parse_uint64(std::string_view digits) {
+   uint64_t value = 0;
+   for (const char c : digits) {
+      const uint64_t digit = c - '0';
+      check(value <= (UINT64_MAX - digit) / 10, "account number is out of range");
+      value = value * 10 + digit;
+   }
+   return value;
+}
+
+// `data || ripemd160(data || type)[0..4]` -> data. The checksum is what keeps a
+// mistyped key from creating an account nobody can use.
+std::vector<char> verify_checksum(const std::vector<char>& raw, std::string_view type) {
    check(raw.size() > 4, "key is too short");
 
    const std::vector<char> data(raw.begin(), raw.end() - 4);
@@ -121,14 +148,36 @@ public_key parse_key(std::string_view text) {
    hashed.insert(hashed.end(), type.begin(), type.end());
    const auto digest = ripemd160(hashed.data(), hashed.size()).extract_as_byte_array();
    check(std::memcmp(raw.data() + data.size(), digest.data(), 4) == 0, "key checksum does not match");
+   return data;
+}
 
-   if (type == "K1" || type == "R1") {
-      check(data.size() == 33, "key has the wrong length");
-      ecc_public_key point;
-      std::copy(data.begin(), data.end(), point.begin());
-      if (type == "K1") return public_key{std::in_place_index<0>, point};
-      return public_key{std::in_place_index<1>, point};
-   }
+ecc_public_key ecc_point(const std::vector<char>& data) {
+   check(data.size() == 33, "key has the wrong length");
+   ecc_public_key point;
+   std::copy(data.begin(), data.end(), point.begin());
+   return point;
+}
+
+// A K1 key written as one decimal number: its 33 bytes and 4 checksum bytes,
+// big-endian, zero-padded to NUMERIC_KEY_DIGITS.
+public_key parse_numeric_key(std::string_view digits) {
+   const std::vector<char> number = decode_number(digits, "0123456789", "key is not a number");
+   check(number.size() <= NUMERIC_KEY_BYTES, "key number is out of range");
+
+   std::vector<char> raw(NUMERIC_KEY_BYTES - number.size(), 0);
+   raw.insert(raw.end(), number.begin(), number.end());
+   return public_key{std::in_place_index<0>, ecc_point(verify_checksum(raw, "K1"))};
+}
+
+// `PUB_<type>_<base58(data || ripemd160(data || type)[0..4])>`, types K1, R1 and WA.
+public_key parse_key(std::string_view text) {
+   check(text.size() > 7 && text.substr(0, 4) == "PUB_" && text[6] == '_',
+         "key must be PUB_K1_, PUB_R1_ or PUB_WA_");
+   const std::string_view type = text.substr(4, 2);
+   const std::vector<char> data = verify_checksum(base58_decode(text.substr(7)), type);
+
+   if (type == "K1") return public_key{std::in_place_index<0>, ecc_point(data)};
+   if (type == "R1") return public_key{std::in_place_index<1>, ecc_point(data)};
 
    check(type == "WA", "key must be PUB_K1_, PUB_R1_ or PUB_WA_");
    datastream<const char*> ds(data.data(), data.size());
@@ -208,22 +257,45 @@ public:
       check(price.fee.symbol == quantity.symbol, "token precision does not match its listing");
       check(quantity >= price.fee, "deposit is below the account fee");
 
-      const auto parts = split(memo, ':');
-      check(parts.size() == 3, "memo must be <nick>.ac:<owner key>:<active key>");
-      const name account = parse_account(parts[0]);
-      check(!is_account(account), "account name is taken");
+      const account_request request = is_digits(memo) ? parse_numeric_request(memo) : parse_text_request(memo);
+      check(!is_account(request.account), "account name is taken");
 
-      create_account(account, parse_key(parts[1]), parse_key(parts[2]));
+      create_account(request.account, request.owner, request.active);
 
       const asset rest = quantity - price.fee;
       if (rest.amount > 0) {
          action(permission_level{get_self(), "active"_n}, token, "transfer"_n,
-                std::make_tuple(get_self(), account, rest, std::string(WELCOME_MEMO)))
+                std::make_tuple(get_self(), request.account, rest, std::string(WELCOME_MEMO)))
             .send();
       }
    }
 
 private:
+   struct account_request {
+      name       account;
+      public_key owner;
+      public_key active;
+   };
+
+   // `<nick>.ac:<owner key>:<active key>`
+   account_request parse_text_request(std::string_view memo) const {
+      const auto parts = split(memo, ':');
+      check(parts.size() == 3, "memo must be <nick>.ac:<owner key>:<active key>");
+      return {parse_account(parts[0]), parse_key(parts[1]), parse_key(parts[2])};
+   }
+
+   // 108 digits: the account name as a uint64, then one K1 key for both owner and active.
+   account_request parse_numeric_request(std::string_view memo) const {
+      check(memo.size() == NUMERIC_NAME_DIGITS + NUMERIC_KEY_DIGITS, "numeric memo must be 108 digits");
+
+      const uint64_t value = parse_uint64(memo.substr(0, NUMERIC_NAME_DIGITS));
+      const name account = parse_account(name(value).to_string());
+      check(account.value == value, "account number is not a canonical name");
+
+      const public_key key = parse_numeric_key(memo.substr(NUMERIC_NAME_DIGITS));
+      return {account, key, key};
+   }
+
    // `<nick>.ac`: a single dot, then the suffix this contract owns.
    name parse_account(std::string_view text) const {
       const std::string suffix = "." + get_self().to_string();
