@@ -184,13 +184,17 @@ nothing in the code is Telos'.
 | deployed | 2026-10-04, tx `84fbc967861608a394f94a09aa3fc9a174f483f8410b3cfa8aa96f012a3300f6`; 600 KB RAM bought by `avral.alcor` |
 | configured | 2026-10-04, `al@eosio.code` on active, tx `85df318a…7376` |
 | config | `4096`, `0.50000000 WAX`, `5.00000000 WAX` |
-| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT` — RAM cost + 10% at WAX $0.0062 |
+| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062 |
 | reserve | `1000.00000000 WAX` topped up by `avral.alcor`, tx `0f3fefcb…f18d` |
 
-The bridge cannot pay for a `.al` account yet: a hop from Ethereum or BSC to WAX
-carries no memo past Telos (`bridgehop` takes `<domain>:<recipient>` and nothing
-more), so the factory is reached by a plain transfer on WAX — an exchange
-withdrawal of WAX, or any WAX wallet.
+Two ways in. A plain transfer on WAX — an exchange withdrawal of WAX, or any
+WAX wallet. Or over the bridge, from Ethereum or BSC in one deposit: the deposit
+goes to `hop.alcor` on Telos with the memo
+`1181148696416462999:al|<chain>:<sender>|<factory memo>`, and the hop withdraws it
+to `al` with the factory memo as the memo WAX pays out with (the ledger's fourth
+memo field, deployed 2026-10-04). The mirror it pays in — USDC, USDT, ETH, BNB on
+`wrap.alcor` — is listed in `fees`. A request `al` refuses there is not paid: it
+expires after the withdrawal's week and goes back to the sender's chain.
 
 4096 bytes of RAM cost 1.814 WAX on 2026-10-04; the fees are that plus 10%.
 The stake stays Alcor's, as on Telos: 5 WAX CPU gives about 7 ms a day.
