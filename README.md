@@ -172,6 +172,29 @@ Every refusal in the table above was also pushed on mainnet and refused with its
 message. Not yet run end to end: a deposit arriving through the router or the
 bridge, and a refused one coming back through `bounce`.
 
+## Live on WAX mainnet
+
+The same build (code hash `d04ad9b0…5b1f`) on **`al`**, the owner of `.al`, so it
+makes `<nick>.al`. The suffix comes from the account the contract is deployed on;
+nothing in the code is Telos'.
+
+| | |
+|---|---|
+| account | `al` (won at auction by `alcor` for 2000 WAX, created 2026-10-04 with key `EOS6iQUb…`) |
+| deployed | 2026-10-04, tx `84fbc967861608a394f94a09aa3fc9a174f483f8410b3cfa8aa96f012a3300f6`; 600 KB RAM bought by `avral.alcor` |
+| configured | 2026-10-04, `al@eosio.code` on active, tx `85df318a…7376` |
+| config | `4096`, `0.50000000 WAX`, `5.00000000 WAX` |
+| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT` — RAM cost + 10% at WAX $0.0062 |
+| reserve | `1000.00000000 WAX` topped up by `avral.alcor`, tx `0f3fefcb…f18d` |
+
+The bridge cannot pay for a `.al` account yet: a hop from Ethereum or BSC to WAX
+carries no memo past Telos (`bridgehop` takes `<domain>:<recipient>` and nothing
+more), so the factory is reached by a plain transfer on WAX — an exchange
+withdrawal of WAX, or any WAX wallet.
+
+4096 bytes of RAM cost 1.814 WAX on 2026-10-04; the fees are that plus 10%.
+The stake stays Alcor's, as on Telos: 5 WAX CPU gives about 7 ms a day.
+
 ## Build
 
 ```bash
