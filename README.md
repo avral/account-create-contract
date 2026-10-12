@@ -5,7 +5,8 @@ that asks for it, so the factory cannot be farmed: an account costs a deposit.
 
 Deployed on **`ac`** (Telos mainnet), the owner of the `.ac` suffix. Only `ac`
 can create `*.ac` names, so no one outside can take a name while its deposit is
-on the way.
+on the way. Also live on WAX as `al`, and on XPR as `ac.alcor`, which makes
+plain names (see the chain sections below).
 
 ## How an account is made
 
@@ -199,10 +200,42 @@ expires after the withdrawal's week and goes back to the sender's chain.
 4096 bytes of RAM cost 1.814 WAX on 2026-10-04; the fees are that plus 10%.
 The stake stays Alcor's, as on Telos: 5 WAX CPU gives about 7 ms a day.
 
+## Live on XPR mainnet
+
+Its own build, `make xpr` (`-DXPR_NETWORK`, code hash `42edb988…2b38`), on
+**`ac.alcor`**. XPR has no name auctions, and anyone may create a plain name of
+4–12 characters, so this build makes plain names: the memo is
+`vasya:<owner key>:<active key>`, or the 108 digits with `vasya` as the name.
+Names under 4 characters and names with a dot are refused. A name is not
+reserved while its deposit is on the way, so someone can take it first; the
+request is then refused as `account name is taken`.
+
+There is no SYS to stake on XPR. Instead of `delegatebw` the contract sends
+`eosio.proton::newaccres`, XPR's one-time welcome stake (10 SYS CPU, 1 SYS NET,
+about 3.2 s of CPU a day), so config stakes are `0.0000 SYS`. RAM is paid in XPR
+at a fixed `0.0020 XPR` a byte plus 10%.
+
+| | |
+|---|---|
+| account | `ac.alcor`, created 2026-10-13 by `alcor`, key `EOS71SJU…`, `ac.alcor@eosio.code` on active, tx `d746fa89…e4db` |
+| deployed | 2026-10-13, tx `6f875096…f1a1`; 1 MB RAM bought by `avral` (code takes 305 KB) |
+| config | `4096`, `0.0000 SYS`, `0.0000 SYS` |
+| fees | `eosio.token`: `11.0000 XPR`; `wrap.alcor`: `0.024300 USDC`, `0.024300 USDT`, `0.00000987 ETH` — cost + 10% at XPR $0.00221 |
+| reserve | `10000.0000 XPR` topped up by `avral`, tx `6dd4d186…`, enough for ~1100 accounts |
+| test accounts | `alcoractest1` (text memo, WA active), tx `1539c276…5051`; `alcoractest2` (digits-only memo), tx `e536792f…c288` |
+
+What an account costs `ac.alcor`, measured on the test accounts: 9.10 XPR of RAM
+(4096 bytes; XPR adds 1400, so quota 5496 against 3018 used with a WA key), and
+368 bytes of its own RAM for the balance row when the rest is forwarded. Every
+refusal of a plain name was pushed on mainnet and refused with its message.
+Watch both the XPR balance and the RAM of `ac.alcor`: forwarded rests use up its
+own RAM.
+
 ## Build
 
 ```bash
-make    # build/account_factory.wasm + .abi, cdt-cpp 5
+make        # build/account_factory.wasm + .abi, cdt-cpp 5
+make xpr    # build/xpr/, the XPR Network build
 ```
 
 ## Deploy and operate

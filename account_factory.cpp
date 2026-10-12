@@ -19,8 +19,21 @@ using namespace eosio;
 //
 // Anything wrong with a request fails the whole transfer. A bridge deposit then
 // stays parked, and the bridge sends it back to its depositor an hour later.
+//
+// The XPR Network build (`make xpr`) differs in two ways. Anyone may create a
+// plain name of 4-12 characters there, so it makes those instead of
+// `<nick>.<suffix>`. And CPU/NET come from eosio.proton::newaccres, not a stake;
+// RAM is paid in XPR.
+
+#ifdef XPR_NETWORK
+static constexpr bool XPR_BUILD = true;
+#else
+static constexpr bool XPR_BUILD = false;
+#endif
 
 static constexpr name SYSTEM_ACCOUNT = "eosio"_n;
+static constexpr name XPR_PROTON_ACCOUNT = "eosio.proton"_n;
+static constexpr size_t XPR_MIN_NAME_LENGTH = 4;  // eosio.system refuses shorter names
 static constexpr std::string_view TOPUP_MEMO = "topup";
 static constexpr std::string_view WELCOME_MEMO = "Welcome to Alcor";
 static constexpr size_t MAX_NAME_LENGTH = 12;
@@ -277,10 +290,11 @@ private:
       public_key active;
    };
 
-   // `<nick>.ac:<owner key>:<active key>`
+   // `<nick>.ac:<owner key>:<active key>`, on XPR `<account>:<owner key>:<active key>`
    account_request parse_text_request(std::string_view memo) const {
       const auto parts = split(memo, ':');
-      check(parts.size() == 3, "memo must be <nick>.ac:<owner key>:<active key>");
+      check(parts.size() == 3, XPR_BUILD ? "memo must be <account>:<owner key>:<active key>"
+                                         : "memo must be <nick>.ac:<owner key>:<active key>");
       return {parse_account(parts[0]), parse_key(parts[1]), parse_key(parts[2])};
    }
 
@@ -296,8 +310,21 @@ private:
       return {account, key, key};
    }
 
-   // `<nick>.ac`: a single dot, then the suffix this contract owns.
+   // `vasya`: 4-12 characters, no dot.
+   static name parse_plain_account(std::string_view text) {
+      check(text.size() >= XPR_MIN_NAME_LENGTH, "account name is shorter than 4 characters");
+      check(text.size() <= MAX_NAME_LENGTH, "account name is longer than 12 characters");
+      check(text.find('.') == std::string_view::npos, "account name cannot contain a dot");
+
+      const name account(text);  // refuses characters outside a-z, 1-5 and '.'
+      check(account.to_string() == text, "account name is not in canonical form");
+      return account;
+   }
+
+   // `<nick>.ac`: a single dot, then the suffix this contract owns. On XPR, a plain name.
    name parse_account(std::string_view text) const {
+      if constexpr (XPR_BUILD) return parse_plain_account(text);
+
       const std::string suffix = "." + get_self().to_string();
       check(text.size() > suffix.size() && text.substr(text.size() - suffix.size()) == suffix,
             "account name must end with " + suffix);
@@ -320,6 +347,9 @@ private:
              std::make_tuple(get_self(), account, single_key(owner), single_key(active)))
          .send();
       action(self, SYSTEM_ACCOUNT, "buyrambytes"_n, std::make_tuple(get_self(), account, cfg.ram_bytes)).send();
+
+      // XPR's one-time welcome stake: 10 SYS CPU and 1 SYS NET from wlcm.proton.
+      if constexpr (XPR_BUILD) action(self, XPR_PROTON_ACCOUNT, "newaccres"_n, std::make_tuple(account)).send();
 
       if (cfg.net_stake.amount > 0 || cfg.cpu_stake.amount > 0) {
          action(self, SYSTEM_ACCOUNT, "delegatebw"_n,
