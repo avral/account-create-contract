@@ -181,6 +181,7 @@ by the admin, at roughly cost + 50%.
 | digits-only memo | 2026-10-01, tx `dc0a190108bf876e6ed9e45134c965619723972c961562c6e2bc9ce32c423ab1`, code hash `d04ad9b0…5b1f` |
 | tail + `made` | 2026-10-25, tx `a182bd67c0c997ad390b70272b59340ebf35973f6954337fda2bd784fe0a63c5`, code hash `9e348d45…44ee`. WAX `al` and XPR `ac.alcor` stay on the previous builds |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
+| reserve | `189.3536 TLOS` after `175.0000 TLOS` topped up by `avraldigital` 2026-10-25, tx `2ed51e89e70b3f8b1fb786e2429f1909db21d4d58c8ebfcd381825028136fa78`: ~230 accounts at ~0.82 TLOS each (0.218 RAM at that day's price + 0.6 stake, the stake still Alcor's) |
 | fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30); added 2026-10-25 at the USDC fee's $0.0156: `0.00002140 BNB`, `0.17500000 POL`, `0.01690000 SUI`, `0.00354000 NEAR`, `8.3800 XPR`, `0.1730 A`, `0.850000 EASY` |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
 | | `acfactest.ac` (exactly the fee, nothing forwarded), tx `37fe41f5cf72a37eea723f95810af21e00d78e699b9e60b65f565935ca58e61e` |
