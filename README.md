@@ -40,6 +40,22 @@ back with `undelegatebw`.
   active.
 - **Reserve.** A transfer with memo `topup` is accepted as a reserve refill and
   creates nothing.
+- **Tail.** Anything after the first `|` is ignored. A courier deposit address
+  on an EVM chain appends its way back, `vasya.ac:…:…|1:0x<address>`; the
+  request is what comes before it, in either form.
+
+### Again for the same account
+
+The factory records every account it makes, with a hash of the keys asked for
+(table `made`). A later request with that name and the same keys is money for
+that account: all of it is forwarded, no fee taken, memo `Deposit to your Alcor
+account`. That is what keeps a deposit address working after its first deposit:
+it asks with the same memo every time. Same keys means the same owner and active
+key in the same order; the digits-only form is one K1 key for both, so it
+matches a text request with that key twice. A request for an existing name with
+other keys, or for an account the factory did not make (or made before this
+table), is `account name is taken`. A repeat still has to be a listed token, at
+least the fee.
 
 ### Digits-only memo, for exchanges
 
@@ -106,7 +122,7 @@ Every check fails the whole transfer, and the tokens never leave the sender:
 | `account number is out of range` | the name part is above `UINT64_MAX` |
 | `account number is not a canonical name` | the name part does not round-trip as a name |
 | `key is not a number` / `key number is out of range` | the key part is not a 37-byte number |
-| `account name is taken` | the name already exists |
+| `account name is taken` | the name exists, and not as this factory's account with these keys |
 | `account factory is not configured` | `setconfig` never called |
 
 For a bridge deposit a refusal fails `forward`: the deposit stays parked, and an
@@ -122,6 +138,7 @@ build, the token is listed and the amount covers the fee.
 |---|---|---|
 | `fees` | token contract | `fee`: what an account costs in that token |
 | `config` | `ac` | `ram_bytes`, `net_stake`, `cpu_stake` given to each account |
+| `made` | `ac` | `account`, `keys`: sha256 of the packed owner and active key it was made with |
 
 `fees` is scoped by the token's contract. The same symbol issued by any other
 contract pays for nothing, so a fake token cannot buy accounts.
@@ -162,8 +179,9 @@ by the admin, at roughly cost + 50%.
 | account | `ac` (won at auction by `avraldigital`, keys `EOS4yTp9…` + `ac@eosio.code` on active) |
 | deployed | 2026-09-30, tx `177bd2a2f6bb8d9bc0c320c4afc6d42f9b7208a4e452591542f0f0ac62f8334e` |
 | digits-only memo | 2026-10-01, tx `dc0a190108bf876e6ed9e45134c965619723972c961562c6e2bc9ce32c423ab1`, code hash `d04ad9b0…5b1f` |
+| tail + `made` | in the source 2026-10-25, **not deployed**: build `9e348d45…44ee` (cdt-cpp, `make`). WAX `al` and XPR `ac.alcor` stay on the previous builds |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
-| fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30) |
+| fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30); added 2026-10-25 at the USDC fee's $0.0156: `0.00002140 BNB`, `0.17500000 POL`, `0.01690000 SUI`, `0.00354000 NEAR`, `8.3800 XPR`, `0.1730 A`, `0.850000 EASY` |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
 | | `acfactest.ac` (exactly the fee, nothing forwarded), tx `37fe41f5cf72a37eea723f95810af21e00d78e699b9e60b65f565935ca58e61e` |
 | | `numtest.ac` (1.5 TLOS, digits-only memo), tx `cbe8bbc30f5f3e2f8f2bfbd1d61c4327656eb85cde1fcda20cf711ceea326439` |
@@ -185,7 +203,7 @@ nothing in the code is Telos'.
 | deployed | 2026-10-04, tx `84fbc967861608a394f94a09aa3fc9a174f483f8410b3cfa8aa96f012a3300f6`; 600 KB RAM bought by `avral.alcor` |
 | configured | 2026-10-04, `al@eosio.code` on active, tx `85df318a…7376` |
 | config | `4096`, `0.50000000 WAX`, `5.00000000 WAX` |
-| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062 |
+| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062; `0.14000000 POL` added 2026-10-25 at the USDC fee's $0.0124 |
 | reserve | `1000.00000000 WAX` topped up by `avral.alcor`, tx `0f3fefcb…f18d` |
 
 Two ways in. A plain transfer on WAX — an exchange withdrawal of WAX, or any

@@ -20,6 +20,15 @@ using namespace eosio;
 // Anything wrong with a request fails the whole transfer. A bridge deposit then
 // stays parked, and the bridge sends it back to its depositor an hour later.
 //
+// A memo may go on past the request after a '|': a deposit address on an EVM
+// chain appends its way back, `|<chain id>:<address>`. Only what comes before
+// the first '|' is read.
+//
+// A request for an account this factory already made, with the keys it was made
+// with, is money for that account: all of it goes there, no fee taken. A deposit
+// address asks with the same memo every time, and only its first deposit makes
+// the account.
+//
 // The XPR Network build (`make xpr`) differs in two ways. Anyone may create a
 // plain name of 4-12 characters there, so it makes those instead of
 // `<nick>.<suffix>`. And CPU/NET come from eosio.proton::newaccres, not a stake;
@@ -36,6 +45,8 @@ static constexpr name XPR_PROTON_ACCOUNT = "eosio.proton"_n;
 static constexpr size_t XPR_MIN_NAME_LENGTH = 4;  // eosio.system refuses shorter names
 static constexpr std::string_view TOPUP_MEMO = "topup";
 static constexpr std::string_view WELCOME_MEMO = "Welcome to Alcor";
+static constexpr std::string_view REPEAT_MEMO = "Deposit to your Alcor account";
+static constexpr char TAIL_SEPARATOR = '|';
 static constexpr size_t MAX_NAME_LENGTH = 12;
 
 // The digits-only memo, for exchanges that refuse anything else in one:
@@ -227,6 +238,14 @@ public:
    };
    using config_singleton = singleton<"config"_n, config_row>;
 
+   // Every account this factory made, and the keys it was asked for.
+   struct [[eosio::table]] made_row {
+      name        account;
+      checksum256 keys;  // keys_hash() of the request that made it
+      uint64_t    primary_key() const { return account.value; }
+   };
+   using made_table = multi_index<"made"_n, made_row>;
+
    [[eosio::action]] void setconfig(uint32_t ram_bytes, const asset& net_stake, const asset& cpu_stake) {
       require_auth(get_self());
       check(ram_bytes > 0, "ram_bytes must be positive");
@@ -270,17 +289,26 @@ public:
       check(price.fee.symbol == quantity.symbol, "token precision does not match its listing");
       check(quantity >= price.fee, "deposit is below the account fee");
 
-      const account_request request = is_digits(memo) ? parse_numeric_request(memo) : parse_text_request(memo);
-      check(!is_account(request.account), "account name is taken");
+      const std::string_view text = std::string_view(memo).substr(0, memo.find(TAIL_SEPARATOR));
+      const account_request request = is_digits(text) ? parse_numeric_request(text) : parse_text_request(text);
+      const checksum256 keys = keys_hash(request);
+      made_table made(get_self(), get_self().value);
+
+      if (is_account(request.account)) {
+         const auto it = made.find(request.account.value);
+         check(it != made.end() && it->keys == keys, "account name is taken");
+         send(token, request.account, quantity, REPEAT_MEMO);
+         return;
+      }
 
       create_account(request.account, request.owner, request.active);
+      made.emplace(get_self(), [&](auto& row) {
+         row.account = request.account;
+         row.keys = keys;
+      });
 
       const asset rest = quantity - price.fee;
-      if (rest.amount > 0) {
-         action(permission_level{get_self(), "active"_n}, token, "transfer"_n,
-                std::make_tuple(get_self(), request.account, rest, std::string(WELCOME_MEMO)))
-            .send();
-      }
+      if (rest.amount > 0) send(token, request.account, rest, WELCOME_MEMO);
    }
 
 private:
@@ -289,6 +317,17 @@ private:
       public_key owner;
       public_key active;
    };
+
+   static checksum256 keys_hash(const account_request& request) {
+      const std::vector<char> packed = pack(std::make_tuple(request.owner, request.active));
+      return sha256(packed.data(), packed.size());
+   }
+
+   void send(name token, name to, const asset& quantity, std::string_view memo) const {
+      action(permission_level{get_self(), "active"_n}, token, "transfer"_n,
+             std::make_tuple(get_self(), to, quantity, std::string(memo)))
+         .send();
+   }
 
    // `<nick>.ac:<owner key>:<active key>`, on XPR `<account>:<owner key>:<active key>`
    account_request parse_text_request(std::string_view memo) const {
