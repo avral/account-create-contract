@@ -179,7 +179,7 @@ by the admin, at roughly cost + 50%.
 | account | `ac` (won at auction by `avraldigital`, keys `EOS4yTp9…` + `ac@eosio.code` on active) |
 | deployed | 2026-09-30, tx `177bd2a2f6bb8d9bc0c320c4afc6d42f9b7208a4e452591542f0f0ac62f8334e` |
 | digits-only memo | 2026-10-01, tx `dc0a190108bf876e6ed9e45134c965619723972c961562c6e2bc9ce32c423ab1`, code hash `d04ad9b0…5b1f` |
-| tail + `made` | in the source 2026-10-25, **not deployed**: build `9e348d45…44ee` (cdt-cpp, `make`). WAX `al` and XPR `ac.alcor` stay on the previous builds |
+| tail + `made` | 2026-10-25, tx `a182bd67c0c997ad390b70272b59340ebf35973f6954337fda2bd784fe0a63c5`, code hash `9e348d45…44ee`. WAX `al` and XPR `ac.alcor` stay on the previous builds |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
 | fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30); added 2026-10-25 at the USDC fee's $0.0156: `0.00002140 BNB`, `0.17500000 POL`, `0.01690000 SUI`, `0.00354000 NEAR`, `8.3800 XPR`, `0.1730 A`, `0.850000 EASY` |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
