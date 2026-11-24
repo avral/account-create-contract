@@ -235,7 +235,7 @@ nothing in the code is Telos'.
 | account | `al` (won at auction by `alcor` for 2000 WAX, created 2026-10-04 with key `EOS6iQUb…`) |
 | deployed | 2026-10-04, tx `84fbc967861608a394f94a09aa3fc9a174f483f8410b3cfa8aa96f012a3300f6`; 600 KB RAM bought by `avral.alcor` |
 | configured | 2026-10-04, `al@eosio.code` on active, tx `85df318a…7376` |
-| waiting + rename | 2026-11-24: code tx `c39c2b1f4c56fe58dcdc6e52d0be5c36ab47467a569b478c0442cf5e24495868` (hash `3eb95188…a590`); `al@rename` key `EOS5GJrg…vzuB` (KeePassXC `Alcor/Bridge/Courier factory rename`), linked to `rename` only, tx `500f827c…fc2c` + `bb6373c8…51c9`; `setwaitfrom bridge.alcor` tx `5b986064…e6d0` |
+| waiting + rename | 2026-11-24: code tx `c39c2b1f4c56fe58dcdc6e52d0be5c36ab47467a569b478c0442cf5e24495868` (hash `3eb95188…a590`); `al@rename` key `EOS5GJrg…vzuB` (in the cleos wallet `alcor`), linked to `rename` only, tx `500f827c…fc2c` + `bb6373c8…51c9`; `setwaitfrom bridge.alcor` tx `5b986064…e6d0` |
 | config | `4096`, `0.50000000 WAX`, `5.00000000 WAX` |
 | fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062; `0.14000000 POL` added 2026-10-25 at the USDC fee's $0.0124; `0.00018370 SOL` added 2026-11-20 at the same (SOL $67.5) |
 | reserve | `1000.00000000 WAX` topped up by `avral.alcor`, tx `0f3fefcb…f18d` |
