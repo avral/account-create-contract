@@ -29,6 +29,15 @@ using namespace eosio;
 // address asks with the same memo every time, and only its first deposit makes
 // the account.
 //
+// A name someone else has is refused, unless the money comes from a sender in
+// `waitfrom`: the bridge's vault, whose payout cannot be refused cheaply (a
+// refused payout goes back only when its withdrawal expires, days later). Such a
+// deposit waits in `waiting` with the keys it asked for, and `rename` makes the
+// account under another name with those same keys — so whoever calls it chooses
+// only the name, never whose the money is. The asked name and those keys are
+// then remembered in `moved`, and later requests like it are paid to the new
+// account whole, as a repeat is.
+//
 // The XPR Network build (`make xpr`) differs in two ways. Anyone may create a
 // plain name of 4-12 characters there, so it makes those instead of
 // `<nick>.<suffix>`. And CPU/NET come from eosio.proton::newaccres, not a stake;
@@ -246,6 +255,38 @@ public:
    };
    using made_table = multi_index<"made"_n, made_row>;
 
+   // Senders whose request for a taken name waits here instead of failing.
+   struct [[eosio::table]] waitfrom_row {
+      name     account;
+      uint64_t primary_key() const { return account.value; }
+   };
+   using waitfrom_table = multi_index<"waitfrom"_n, waitfrom_row>;
+
+   // A deposit from a `waitfrom` sender that asked for a name it cannot have.
+   struct [[eosio::table]] waiting_row {
+      uint64_t       id;
+      name           from;
+      name           token;     // the token's contract
+      asset          quantity;  // all of it, no fee taken yet
+      name           account;   // the name asked for
+      public_key     owner;
+      public_key     active;
+      checksum256    keys;      // keys_hash() of owner and active
+      time_point_sec at;
+      uint64_t       primary_key() const { return id; }
+   };
+   using waiting_table = multi_index<"waiting"_n, waiting_row>;
+
+   // Where requests for a taken name went after a rename. Scoped by the name
+   // asked for; one row per set of keys that asked for it.
+   struct [[eosio::table]] moved_row {
+      uint64_t    id;
+      checksum256 keys;
+      name        account;  // made with those keys
+      uint64_t    primary_key() const { return id; }
+   };
+   using moved_table = multi_index<"moved"_n, moved_row>;
+
    [[eosio::action]] void setconfig(uint32_t ram_bytes, const asset& net_stake, const asset& cpu_stake) {
       require_auth(get_self());
       check(ram_bytes > 0, "ram_bytes must be positive");
@@ -291,24 +332,63 @@ public:
 
       const std::string_view text = std::string_view(memo).substr(0, memo.find(TAIL_SEPARATOR));
       const account_request request = is_digits(text) ? parse_numeric_request(text) : parse_text_request(text);
-      const checksum256 keys = keys_hash(request);
-      made_table made(get_self(), get_self().value);
+      if (deliver(token, quantity, price.fee, request)) return;
 
-      if (is_account(request.account)) {
-         const auto it = made.find(request.account.value);
-         check(it != made.end() && it->keys == keys, "account name is taken");
-         send(token, request.account, quantity, REPEAT_MEMO);
-         return;
-      }
-
-      create_account(request.account, request.owner, request.active);
-      made.emplace(get_self(), [&](auto& row) {
+      waitfrom_table waitfrom(get_self(), get_self().value);
+      check(waitfrom.find(from.value) != waitfrom.end(), "account name is taken");
+      waiting_table waiting(get_self(), get_self().value);
+      waiting.emplace(get_self(), [&](auto& row) {
+         row.id = waiting.available_primary_key();
+         row.from = from;
+         row.token = token;
+         row.quantity = quantity;
          row.account = request.account;
-         row.keys = keys;
+         row.owner = request.owner;
+         row.active = request.active;
+         row.keys = keys_hash(request);
+         row.at = time_point_sec(current_time_point());
       });
+   }
 
-      const asset rest = quantity - price.fee;
-      if (rest.amount > 0) send(token, request.account, rest, WELCOME_MEMO);
+   [[eosio::action]] void setwaitfrom(name account, bool on) {
+      require_auth(get_self());
+      waitfrom_table waitfrom(get_self(), get_self().value);
+      const auto it = waitfrom.find(account.value);
+      if (on && it == waitfrom.end()) {
+         check(is_account(account), "no such account");
+         waitfrom.emplace(get_self(), [&](auto& row) { row.account = account; });
+      }
+      if (!on && it != waitfrom.end()) waitfrom.erase(it);
+   }
+
+   // A waiting deposit, made into `account` with the keys it asked for. Meant
+   // for a permission of its own (linkauth), held by whoever answers the owners:
+   // it chooses only the name.
+   [[eosio::action]] void rename(uint64_t id, name account) {
+      require_auth(get_self());
+      waiting_table waiting(get_self(), get_self().value);
+      const auto& row = waiting.get(id, "nothing waits under that id");
+
+      fees_table fees(get_self(), row.token.value);
+      const auto& price = fees.get(row.quantity.symbol.code().raw(), "this token does not pay for accounts");
+      check(price.fee.symbol == row.quantity.symbol, "token precision does not match its listing");
+      check(row.quantity >= price.fee, "deposit is below the account fee");
+
+      const account_request request{parse_account(account.to_string()), row.owner, row.active};
+      check(deliver(row.token, row.quantity, price.fee, request), "account name is taken");
+
+      moved_table moved(get_self(), row.account.value);
+      const auto it = std::find_if(moved.begin(), moved.end(), [&](const auto& m) { return m.keys == row.keys; });
+      if (it == moved.end()) {
+         moved.emplace(get_self(), [&](auto& m) {
+            m.id = moved.available_primary_key();
+            m.keys = row.keys;
+            m.account = account;
+         });
+      } else {
+         moved.modify(it, same_payer, [&](auto& m) { m.account = account; });
+      }
+      waiting.erase(row);
    }
 
 private:
@@ -317,6 +397,37 @@ private:
       public_key owner;
       public_key active;
    };
+
+   // Pay `quantity` for `request`: a new account, less the fee; or all of it to
+   // the account this factory made with those keys, under that name or the one
+   // a rename moved it to. False if the name is someone else's.
+   bool deliver(name token, const asset& quantity, const asset& fee, const account_request& request) {
+      const checksum256 keys = keys_hash(request);
+      made_table made(get_self(), get_self().value);
+
+      if (is_account(request.account)) {
+         const auto it = made.find(request.account.value);
+         if (it != made.end() && it->keys == keys) {
+            send(token, request.account, quantity, REPEAT_MEMO);
+            return true;
+         }
+         moved_table moved(get_self(), request.account.value);
+         const auto to = std::find_if(moved.begin(), moved.end(), [&](const auto& m) { return m.keys == keys; });
+         if (to == moved.end()) return false;
+         send(token, to->account, quantity, REPEAT_MEMO);
+         return true;
+      }
+
+      create_account(request.account, request.owner, request.active);
+      made.emplace(get_self(), [&](auto& row) {
+         row.account = request.account;
+         row.keys = keys;
+      });
+
+      const asset rest = quantity - fee;
+      if (rest.amount > 0) send(token, request.account, rest, WELCOME_MEMO);
+      return true;
+   }
 
    static checksum256 keys_hash(const account_request& request) {
       const std::vector<char> packed = pack(std::make_tuple(request.owner, request.active));

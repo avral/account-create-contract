@@ -57,6 +57,38 @@ other keys, or for an account the factory did not make (or made before this
 table), is `account name is taken`. A repeat still has to be a listed token, at
 least the fee.
 
+### A taken name from the bridge's vault waits
+
+A payout of the bridge's vault on WAX or XPR cannot be refused cheaply: the
+withdrawal would come back only when it expires, a week later. So a request for
+a name someone else has, from a sender listed in `waitfrom` (the vault,
+`bridge.alcor`), is not refused: the whole amount waits in table `waiting`
+with the name and the keys it asked for. Anything else wrong with the request
+(name rule, keys, token, below the fee) is still refused, and a taken name from
+any other sender too — an exchange gets its money back at once.
+
+`rename(id, account)` makes the waiting deposit into `account` with the keys it
+asked for, less the fee (or all of it to an account this factory made with the
+same keys), and records in `moved` (scope: the name asked for) that those keys
+went to `account`. A later request for the old name with those keys — the same
+deposit address again, from anyone — is paid to `account` whole, as a repeat is.
+
+`rename` needs the factory's authority; it is meant for a permission of its own,
+`<factory>@rename`, linked to that action alone and held by the courier. It
+chooses only the name: the keys are the ones the deposit asked for, so the
+money stays with their owner.
+
+```
+setwaitfrom(account, on)   add or drop a sender whose taken-name requests wait
+rename(id, account)        make waiting deposit `id` into `account`, same keys
+```
+
+```
+cleos -u <rpc> set account permission al rename <courier key> active -p al@owner
+cleos -u <rpc> set action permission al al rename rename -p al@owner
+cleos -u <rpc> push action al setwaitfrom '["bridge.alcor", true]' -p al
+```
+
 ### Digits-only memo, for exchanges
 
 Many exchanges refuse `:`, `.` or `_` in a withdrawal memo, and some take digits
@@ -182,7 +214,7 @@ by the admin, at roughly cost + 50%.
 | tail + `made` | 2026-10-25, tx `a182bd67c0c997ad390b70272b59340ebf35973f6954337fda2bd784fe0a63c5`, code hash `9e348d45…44ee`. WAX `al` and XPR `ac.alcor` stay on the previous builds |
 | config | `4096`, `0.1000 TLOS`, `0.5000 TLOS` |
 | reserve | `189.3536 TLOS` after `175.0000 TLOS` topped up by `avraldigital` 2026-10-25, tx `2ed51e89e70b3f8b1fb786e2429f1909db21d4d58c8ebfcd381825028136fa78`: ~230 accounts at ~0.82 TLOS each (0.218 RAM at that day's price + 0.6 stake, the stake still Alcor's) |
-| fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30); added 2026-10-25 at the USDC fee's $0.0156: `0.00002140 BNB`, `0.17500000 POL`, `0.01690000 SUI`, `0.00354000 NEAR`, `8.3800 XPR`, `0.1730 A`, `0.850000 EASY` |
+| fees | `wrap.alcor`: `0.015600 USDC`, `0.015600 USDT`, `2.50000000 WAX`, `0.00000580 ETH`; `eosio.token`: `0.9953 TLOS` — cost + 20% at TLOS $0.01558 (2026-09-30); added 2026-10-25 at the USDC fee's $0.0156: `0.00002140 BNB`, `0.17500000 POL`, `0.01690000 SUI`, `0.00354000 NEAR`, `8.3800 XPR`, `0.1730 A`, `0.850000 EASY`; added 2026-11-20 at the same $0.0156: `0.016100000 GRAM` (TON $0.97), `0.00023100 SOL` (SOL $67.5) |
 | test accounts | `tst1.ac` (3 WAX, 2 forwarded), tx `d20d079a70e903c1c2f46faf19dbb97fa715bdc3689fb7d748edacf8c702f048` |
 | | `acfactest.ac` (exactly the fee, nothing forwarded), tx `37fe41f5cf72a37eea723f95810af21e00d78e699b9e60b65f565935ca58e61e` |
 | | `numtest.ac` (1.5 TLOS, digits-only memo), tx `cbe8bbc30f5f3e2f8f2bfbd1d61c4327656eb85cde1fcda20cf711ceea326439` |
@@ -204,7 +236,7 @@ nothing in the code is Telos'.
 | deployed | 2026-10-04, tx `84fbc967861608a394f94a09aa3fc9a174f483f8410b3cfa8aa96f012a3300f6`; 600 KB RAM bought by `avral.alcor` |
 | configured | 2026-10-04, `al@eosio.code` on active, tx `85df318a…7376` |
 | config | `4096`, `0.50000000 WAX`, `5.00000000 WAX` |
-| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062; `0.14000000 POL` added 2026-10-25 at the USDC fee's $0.0124 |
+| fees | `eosio.token`: `2.00000000 WAX`; `wrap.alcor`: `0.012400 USDC`, `0.012400 USDT`, `0.00000464 ETH`, `0.00001591 BNB` — RAM cost + 10% at WAX $0.0062; `0.14000000 POL` added 2026-10-25 at the USDC fee's $0.0124; `0.00018370 SOL` added 2026-11-20 at the same (SOL $67.5) |
 | reserve | `1000.00000000 WAX` topped up by `avral.alcor`, tx `0f3fefcb…f18d` |
 
 Two ways in. A plain transfer on WAX — an exchange withdrawal of WAX, or any
@@ -239,7 +271,7 @@ at a fixed `0.0020 XPR` a byte plus 10%.
 | account | `ac.alcor`, created 2026-10-13 by `alcor`, key `EOS71SJU…`, `ac.alcor@eosio.code` on active, tx `d746fa89…e4db` |
 | deployed | 2026-10-13, tx `6f875096…f1a1`; 1 MB RAM bought by `avral` (code takes 305 KB) |
 | config | `4096`, `0.0000 SYS`, `0.0000 SYS` |
-| fees | `eosio.token`: `11.0000 XPR`; `wrap.alcor`: `0.024300 USDC`, `0.024300 USDT`, `0.00000987 ETH` — cost + 10% at XPR $0.00221 |
+| fees | `eosio.token`: `11.0000 XPR`; `wrap.alcor`: `0.024300 USDC`, `0.024300 USDT`, `0.00000987 ETH` — cost + 10% at XPR $0.00221; added 2026-11-20 at the USDC fee's $0.0243: `0.00004565 BNB` (BNB $532), `0.00036000 SOL` (SOL $67.5) |
 | reserve | `10000.0000 XPR` topped up by `avral`, tx `6dd4d186…`, enough for ~1100 accounts |
 | test accounts | `alcoractest1` (text memo, WA active), tx `1539c276…5051`; `alcoractest2` (digits-only memo), tx `e536792f…c288` |
 
