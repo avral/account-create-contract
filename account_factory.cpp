@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <optional>
 #include <string_view>
 
 using namespace eosio;
@@ -278,11 +279,12 @@ public:
    using waiting_table = multi_index<"waiting"_n, waiting_row>;
 
    // Where requests for a taken name went after a rename. Scoped by the name
-   // asked for; one row per set of keys that asked for it.
+   // asked for; one row per set of keys that asked for it, keyed by the first 8
+   // bytes of their hash (key_id), little-endian.
    struct [[eosio::table]] moved_row {
-      uint64_t    id;
+      uint64_t    id;       // key_id(keys)
       checksum256 keys;
-      name        account;  // made with those keys
+      name        account;  // made with those keys: an account deliver() paid
       uint64_t    primary_key() const { return id; }
    };
    using moved_table = multi_index<"moved"_n, moved_row>;
@@ -375,18 +377,23 @@ public:
       check(row.quantity >= price.fee, "deposit is below the account fee");
 
       const account_request request{parse_account(account.to_string()), row.owner, row.active};
-      check(deliver(row.token, row.quantity, price.fee, request), "account name is taken");
+      const std::optional<name> paid = deliver(row.token, row.quantity, price.fee, request);
+      check(paid.has_value(), "account name is taken");
 
+      // Where the money went, not the name asked for: under `account` a rename
+      // may find an earlier one's account, and only an account made with these
+      // keys is ever where later requests go.
       moved_table moved(get_self(), row.account.value);
-      const auto it = std::find_if(moved.begin(), moved.end(), [&](const auto& m) { return m.keys == row.keys; });
+      const auto it = moved.find(key_id(row.keys));
       if (it == moved.end()) {
          moved.emplace(get_self(), [&](auto& m) {
-            m.id = moved.available_primary_key();
+            m.id = key_id(row.keys);
             m.keys = row.keys;
-            m.account = account;
+            m.account = *paid;
          });
       } else {
-         moved.modify(it, same_payer, [&](auto& m) { m.account = account; });
+         check(it->keys == row.keys, "another set of keys holds this key id");
+         moved.modify(it, same_payer, [&](auto& m) { m.account = *paid; });
       }
       waiting.erase(row);
    }
@@ -400,8 +407,9 @@ private:
 
    // Pay `quantity` for `request`: a new account, less the fee; or all of it to
    // the account this factory made with those keys, under that name or the one
-   // a rename moved it to. False if the name is someone else's.
-   bool deliver(name token, const asset& quantity, const asset& fee, const account_request& request) {
+   // a rename moved it to. The account paid, or nothing if the name is someone
+   // else's.
+   std::optional<name> deliver(name token, const asset& quantity, const asset& fee, const account_request& request) {
       const checksum256 keys = keys_hash(request);
       made_table made(get_self(), get_self().value);
 
@@ -409,13 +417,13 @@ private:
          const auto it = made.find(request.account.value);
          if (it != made.end() && it->keys == keys) {
             send(token, request.account, quantity, REPEAT_MEMO);
-            return true;
+            return request.account;
          }
          moved_table moved(get_self(), request.account.value);
-         const auto to = std::find_if(moved.begin(), moved.end(), [&](const auto& m) { return m.keys == keys; });
-         if (to == moved.end()) return false;
+         const auto to = moved.find(key_id(keys));
+         if (to == moved.end() || to->keys != keys) return std::nullopt;
          send(token, to->account, quantity, REPEAT_MEMO);
-         return true;
+         return to->account;
       }
 
       create_account(request.account, request.owner, request.active);
@@ -426,7 +434,15 @@ private:
 
       const asset rest = quantity - fee;
       if (rest.amount > 0) send(token, request.account, rest, WELCOME_MEMO);
-      return true;
+      return request.account;
+   }
+
+   // The first 8 bytes of a keys hash, little-endian: a `moved` row's id.
+   static uint64_t key_id(const checksum256& keys) {
+      const auto bytes = keys.extract_as_byte_array();
+      uint64_t id = 0;
+      std::memcpy(&id, bytes.data(), sizeof(id));
+      return id;
    }
 
    static checksum256 keys_hash(const account_request& request) {

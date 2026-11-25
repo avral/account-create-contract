@@ -69,9 +69,15 @@ any other sender too — an exchange gets its money back at once.
 
 `rename(id, account)` makes the waiting deposit into `account` with the keys it
 asked for, less the fee (or all of it to an account this factory made with the
-same keys), and records in `moved` (scope: the name asked for) that those keys
-went to `account`. A later request for the old name with those keys — the same
-deposit address again, from anyone — is paid to `account` whole, as a repeat is.
+same keys, or to where those keys already moved from `account`), and records in
+`moved` (scope: the name asked for; id: the first 8 bytes of the keys hash,
+little-endian) the account it actually paid. A later request for the old name
+with those keys — the same deposit address again, from anyone — is paid there
+whole, as a repeat is. `moved` only ever points at an account made with those
+keys: recording the asked `account` instead let a second rename of the same name
+point it at a squatter (audit 2026-11-25). A payout that landed while its name was
+being renamed is settled by `rename(id, <the name it asked for>)`: it goes where
+the keys moved.
 
 `rename` needs the factory's authority; it is meant for a permission of its own,
 `<factory>@rename`, linked to that action alone and held by the courier. It
